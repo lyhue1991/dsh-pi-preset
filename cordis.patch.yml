@@ -1,8 +1,13 @@
-# dsh-pi-preset bundle patch: one host-side bootstrap row.
+# dsh-pi-preset bundle patch: host-side rows.
 #
-# The row bridges the vendored preset into DSH's preset roster (see plugin.js
-# for why a symlink into the user root is the registration channel). It
-# publishes no service and registers no model tools, so no realm applies.
+# The bootstrap row bridges the vendored preset into DSH's preset roster (see
+# plugin.js for why a symlink into the user root is the registration channel).
+# The permission-pin row defaults new sessions STARTED with the Pi preset to
+# the danger-full-access permission preset (see permission-pin.js); it loads
+# after dsh-base's permission row, so its log events win the fold. It publishes
+# no service and registers no model tools, so no realm applies.
 - insert:
     - id: dsh-pi-preset-bootstrap
       name: '@lyhue1991/dsh-pi-preset'
+    - id: dsh-pi-preset-permission-pin
+      name: '@lyhue1991/dsh-pi-preset/permission-pin'

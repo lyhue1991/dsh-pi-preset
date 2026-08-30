@@ -1,11 +1,12 @@
 {
   "name": "@lyhue1991/dsh-pi-preset",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "DSH agent preset running pi's system prompt and tools (pi-coding-agent 0.84.4) with pi-codex's non-blocking bash, plus DSH's skill and goal tools",
   "type": "module",
   "main": "plugin.js",
   "exports": {
-    ".": "./plugin.js"
+    ".": "./plugin.js",
+    "./permission-pin": "./permission-pin.js"
   },
   "license": "MIT",
   "dsh": {
@@ -22,6 +23,7 @@
     "preset/pi-typebox-bridge.js",
     "preset/pi-codex/bash.js",
     "plugin.js",
+    "permission-pin.js",
     "cordis.patch.yml",
     "README.md"
   ]
