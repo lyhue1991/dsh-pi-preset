@@ -1,0 +1,28 @@
+{
+  "name": "@lyhue1991/dsh-pi-preset",
+  "version": "0.1.0",
+  "description": "DSH agent preset running pi's system prompt and tools (pi-coding-agent 0.84.4) with pi-codex's non-blocking bash, plus DSH's skill and goal tools",
+  "type": "module",
+  "main": "plugin.js",
+  "exports": {
+    ".": "./plugin.js"
+  },
+  "license": "MIT",
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "files": [
+    "preset/agent.cordis.yml",
+    "preset/preset.yml",
+    "preset/package.json",
+    "preset/pi-coding-tools.js",
+    "preset/pi-codex-bash.js",
+    "preset/pi-typebox-bridge.js",
+    "preset/pi-codex/bash.js",
+    "plugin.js",
+    "cordis.patch.yml",
+    "README.md"
+  ]
+}

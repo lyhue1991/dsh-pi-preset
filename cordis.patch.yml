@@ -1,0 +1,8 @@
+# dsh-pi-preset bundle patch: one host-side bootstrap row.
+#
+# The row bridges the vendored preset into DSH's preset roster (see plugin.js
+# for why a symlink into the user root is the registration channel). It
+# publishes no service and registers no model tools, so no realm applies.
+- insert:
+    - id: dsh-pi-preset-bootstrap
+      name: '@lyhue1991/dsh-pi-preset'
