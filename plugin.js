@@ -13,10 +13,12 @@
  *   1. materialize the vendored `preset/node_modules` (npm install
  *      --ignore-scripts) on first boot — pnpm does not run dependency
  *      lifecycle scripts, so the package cannot rely on a postinstall;
- *   2. mirror every preset file (agent.cordis.yml, preset.yml, the bridge
+ *   2. symlink every preset file (agent.cordis.yml, preset.yml, the bridge
  *      plugins, the vendored pi-codex build) from the installed package into
- *      `${userRoot}/pi`, overwriting whatever a previous mirror put there —
- *      the installed package is the single source of truth;
+ *      `${userRoot}/pi`, replacing whatever a previous mirror put there. The
+ *      installed package is the single source of truth and the roster reads
+ *      through the links, so when the package is installed as a pnpm `link:`
+ *      to a local checkout, edits there reach new sessions without a re-mirror;
  *   3. symlink `${userRoot}/pi/node_modules` to the vendored one, so the
  *      preset's relative imports resolve without a second install.
  *
@@ -25,7 +27,7 @@
  * rather than deleted. Everything is idempotent: unchanged files are not
  * rewritten, so the steady-state boot only stats.
  */
-import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, renameSync, rmSync, symlinkSync, writeFileSync, statSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readdirSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { execSync } from "node:child_process";
 import { join, relative, resolve } from "node:path";
@@ -88,39 +90,28 @@ function apply(ctx) {
 		}
 		mkdirSync(mirror, { recursive: true });
 
-		// 3. Mirror the preset files (idempotent: unchanged files stay).
-		let written = 0;
+		// 3. Link the preset files into the mirror. The mirror is fully owned
+		//    (proven by the marker check above), so its previous contents are
+		//    replaced wholesale: real copies left by an older copy-based
+		//    boot, or links to a superseded install path. The steady-state
+		//    boot therefore only recreates symlinks, and a `link:`-installed
+		//    checkout needs no further propagation step.
+		let linked = 0;
+		for (const entry of readdirSync(mirror, { withFileTypes: true })) {
+			rmSync(join(mirror, entry.name), { recursive: true, force: true });
+		}
 		for (const file of listFiles(presetDir)) {
-			const source = join(presetDir, file);
 			const target = join(mirror, file);
 			mkdirSync(join(target, ".."), { recursive: true });
-			const next = readFileSync(source);
-			const current = existsSync(target) ? readFileSync(target) : undefined;
-			if (current === undefined || !current.equals(next)) {
-				writeFileSync(target, next);
-				written += 1;
-			}
+			symlinkSync(join(presetDir, file), target);
+			linked += 1;
 		}
 
-		// 4. Point node_modules at the vendored install.
-		const modulesLink = join(mirror, "node_modules");
-		const modulesLinked = (() => {
-			try {
-				return lstatSync(modulesLink).isSymbolicLink() && readlinkSync(modulesLink) === join(presetDir, "node_modules");
-			} catch {
-				return false;
-			}
-		})();
-		if (!modulesLinked) {
-			if (existsSync(modulesLink) || lstatSync(modulesLink, { throwIfNoEntry: false }) !== undefined) rmSync(modulesLink, { recursive: true, force: true });
-			symlinkSync(join(presetDir, "node_modules"), modulesLink, "dir");
-			written += 1;
-		}
-
+		// 4. Point node_modules at the vendored install (a directory link, so
+		//    the pi tools resolve their relative imports through it).
+		symlinkSync(join(presetDir, "node_modules"), join(mirror, "node_modules"), "dir");
 		writeFileSync(join(mirror, ".dsh-pi-preset-mirror"), "");
-		if (written > 0) {
-			console.log(`[dsh-pi-preset] preset mirror updated at ${mirror} (${written} item(s) written)`);
-		}
+		console.log(`[dsh-pi-preset] preset mirror linked at ${mirror} (${linked} file(s))`);
 	}, "dsh-pi-preset.bootstrap()");
 }
 

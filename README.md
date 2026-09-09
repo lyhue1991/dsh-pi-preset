@@ -6,7 +6,7 @@ A DSH plugin that ships the `pi` agent preset: pi's real system prompt and pi's 
 
 A new agent preset named **Pi**:
 
-- **System prompt** — the output of pi's own `buildSystemPrompt` (`@earendil-works/pi-coding-agent` 0.84.4), mounted as the sole prompt section.
+- **System prompt** — the output of pi's own `buildSystemPrompt` (`@earendil-works/pi-coding-agent` 0.85.1), mounted as the sole prompt section.
 - **Tools** — pi's real tool implementations (`read`/`edit`/`write`/`grep`/`find`/`ls` via pi's own factories), with pi's synchronous `bash` replaced by **pi-codex's non-blocking `bash` + `bash_io`** (spawn, poll, write stdin, Ctrl-C; long-running commands return a `session_id` instead of blocking).
 - **Skills** — DSH's standard skill stack (the `skill` tool and catalog messages).
 - **Goals** — DSH's standard goal tools (`create_goal` / `get_goal` / `update_goal`).
@@ -26,12 +26,21 @@ From a local checkout:
 dsh plugin --profile web add ~/Codes/dsh-pi-preset
 ```
 
-Then restart the profile. On first boot the bootstrap row:
+`dsh plugin add` with a directory records a pnpm `link:` in the profile's
+`package.json` (like `"@lyhue1991/dsh-pi-preset": "link:../../../Codes/dsh-pi-preset"`),
+so the profile runs this checkout itself rather than an npm copy. Then restart
+the profile. On first boot the bootstrap row:
 
 1. materializes the vendored `preset/node_modules` (`npm install --ignore-scripts`),
-2. mirrors the preset files into `~/.dsh/.agent-presets/pi` (the roster's user root — the only third-party registration channel) and symlinks that mirror's `node_modules` back to the vendored install.
+2. symlinks every preset file into `~/.dsh/.agent-presets/pi` (the roster's user root — the only third-party registration channel) and symlinks that mirror's `node_modules` back to the vendored install.
 
 A pre-existing real `~/.dsh/.agent-presets/pi` that is not this mirror (a hand-installed copy) is renamed to `pi.pre-dsh-pi-preset-<timestamp>` (not deleted). The installed package is the single source of truth: every boot re-mirrors the preset files, so edit the preset in this checkout (or under the installed package's `preset/`) and restart to propagate.
+
+Because the mirror is a symlink farm, the roster reads the checkout directly:
+composition edits (`agent.cordis.yml`, `preset.yml`) are picked up by new
+sessions without a restart (the roster re-reads a composition when its file
+stamp changes). `preset/pi-*.js` edits still need a profile restart — Node's
+ESM loader caches module URLs (see [Notes and boundaries](#notes-and-boundaries)).
 
 Select **Pi** in the agent-preset picker (or set the `agent-presets.default` setting) for new sessions.
 

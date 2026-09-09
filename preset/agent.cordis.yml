@@ -20,12 +20,16 @@
 # this preset registers. `{{cwd}}` resolves from the agent's own workspace.
 # `complete: true` makes this the sole prompt section; `includeRuntimeContext:
 # false` drops the DSH runtime context block pi's prompt does not carry.
+#
+# dsh 0.1.3-alpha.2 renamed the persona row's `text` key to `prefix`
+# (required). The same text is therefore shipped under BOTH keys through a
+# YAML anchor: dsh 0.1.2 (DSH Desktop) reads `text`, dsh 0.1.3+ (dsh web)
+# reads `prefix`, and each schema ignores the key it does not know. Drop the
+# `text` key once dsh 0.1.2 support is retired.
 - id: persona
   name: '@deepseek-ai/dsh-persona'
   config:
-    complete: true
-    includeRuntimeContext: false
-    text: |
+    prefix: &pi-persona |
       You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.
 
       Available tools:
@@ -56,6 +60,9 @@
       - Show file paths clearly when working with files
 
       Current working directory: {{cwd}}
+    text: *pi-persona
+    complete: true
+    includeRuntimeContext: false
 
 # ── pi tools ────────────────────────────────────────────────────────────────
 
