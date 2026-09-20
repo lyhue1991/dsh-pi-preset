@@ -81,6 +81,12 @@
 - id: pi-codex-bash
   name: ./pi-codex-bash.js
 
+# DSH Desktop loads dsh-ppt-composer on the host plane, which otherwise makes
+# its inherited pptd_* and ppt_* tools visible to every preset. Restrict those
+# host tools only for Pi; other presets and presentation tools are unaffected.
+- id: pi-disable-ppt-tools
+  name: ./pi-disable-ppt-tools.js
+
 # ── skills ──────────────────────────────────────────────────────────────────
 
 # DSH's standard skill stack (as in `standard`): the skill REGISTRY lives in

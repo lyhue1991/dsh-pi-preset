@@ -20,6 +20,7 @@
     "preset/package.json",
     "preset/pi-coding-tools.js",
     "preset/pi-codex-bash.js",
+    "preset/pi-disable-ppt-tools.js",
     "preset/pi-typebox-bridge.js",
     "preset/pi-codex/bash.js",
     "plugin.js",

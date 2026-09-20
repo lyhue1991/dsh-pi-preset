@@ -8,6 +8,7 @@ A new agent preset named **Pi**:
 
 - **System prompt** — the output of pi's own `buildSystemPrompt` (`@earendil-works/pi-coding-agent` 0.85.1), mounted as the sole prompt section.
 - **Tools** — pi's real tool implementations (`read`/`edit`/`write`/`grep`/`find`/`ls` via pi's own factories), with pi's synchronous `bash` replaced by **pi-codex's non-blocking `bash` + `bash_io`** (spawn, poll, write stdin, Ctrl-C; long-running commands return a `session_id` instead of blocking).
+- **No Desktop PPT tools** — the Pi preset masks the host-level `dsh-ppt-composer` tools (`pptd_*` and `ppt_*`) without disabling them for other presets.
 - **Skills** — DSH's standard skill stack (the `skill` tool and catalog messages).
 - **Goals** — DSH's standard goal tools (`create_goal` / `get_goal` / `update_goal`).
 - Compaction policy from the `standard` preset.
