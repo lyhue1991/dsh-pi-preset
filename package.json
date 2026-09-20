@@ -1,6 +1,6 @@
 {
   "name": "@lyhue1991/dsh-pi-preset",
-  "version": "0.2.4",
+  "version": "0.2.5",
   "description": "DSH agent preset running pi's system prompt and tools (pi-coding-agent 0.85.1) with pi-codex's non-blocking bash, plus DSH's skill and goal tools",
   "type": "module",
   "main": "plugin.js",
