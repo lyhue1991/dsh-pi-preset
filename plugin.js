@@ -1,43 +1,64 @@
 /**
  * dsh-pi-preset bootstrap — the bundle's host-side row.
  *
- * DSH's preset roster reads presets from configured roots plus the USER ROOT
- * (`${DSH_HOME:-~/.dsh}/.agent-presets`); the `agent-presets` row's
- * `config.roots` is force-overwritten to the shipped root by the profile
- * composer, so a plugin package cannot register a preset root directly. The
- * roster's scanner also only recognizes REAL directories (`Dirent
- * .isDirectory()`), so a symlinked preset is invisible. This bootstrap
- * therefore bridges the package into the supported channel by materializing
- * a mirror under the user root:
+ * DSH hosts come in two roster shapes, and this bootstrap bridges both. Both
+ * paths serve the preset from a MATERIALIZED COPY under the roster's user
+ * root (`${DSH_HOME:-~/.dsh}/.agent-presets/pi`):
  *
- *   1. materialize the vendored `preset/node_modules` (npm install
- *      --ignore-scripts) on first boot — pnpm does not run dependency
- *      lifecycle scripts, so the package cannot rely on a postinstall;
- *   2. symlink every preset file (agent.cordis.yml, preset.yml, the bridge
- *      plugins, the vendored pi-codex build) from the installed package into
- *      `${userRoot}/pi`, replacing whatever a previous mirror put there. The
- *      installed package is the single source of truth and the roster reads
- *      through the links, so when the package is installed as a pnpm `link:`
- *      to a local checkout, edits there reach new sessions without a re-mirror;
- *   3. symlink `${userRoot}/pi/node_modules` to the vendored one, so the
- *      preset's relative imports resolve without a second install.
+ *   1. DECLARATIVE REGISTRY (DSH Desktop 0.8+, `@deepseek-ai/dsh-agent-preset-
+ *      registry`): presets are registered by calling `ctx.agentPresets.
+ *      register({ id, name, description, plugins })`; there is no filesystem
+ *      scan. Package rows (`@deepseek-ai/*`) keep their specifiers and mount
+ *      against the registry's own baseUrl, exactly like a shipped preset;
+ *      this package's bridge plugins cross as absolute `file:` URLs into the
+ *      materialized copy (see ./preset/pi-preset-registration.js).
+ *   2. FILESYSTEM ROSTER (dsh web 0.1.x, legacy dsh-desktop, `@deepseek-ai/
+ *      dsh-agent-presets`): a preset is a directory under the user root
+ *      holding an agent.cordis.yml, and a plugin package cannot register a
+ *      preset root directly (`config.roots` is force-overwritten by the
+ *      profile composer) — so the materialized copy IS the registration.
  *
- * A pre-existing real `${userRoot}/pi` that is not this mirror (a
- * hand-installed copy) is renamed to `pi.pre-dsh-pi-preset-<timestamp>`
- * rather than deleted. Everything is idempotent: unchanged files are not
- * rewritten, so the steady-state boot only stats.
+ * Why a copy rather than links into the installed package: the Desktop host
+ * installs a resolution-interception layer keyed by each bundle's declaring
+ * directory, and a module whose URL resolves under this package gets its bare
+ * imports rerouted to the host's newer copies (`@deepseek-ai/dsh-llm` without
+ * `CallId`, ...), which breaks the vendored dependency set. Files under the
+ * user root sit outside every declared layer and resolve the vendored
+ * dependencies natively.
+ *
+ * Both paths first materialize the vendored `preset/node_modules` (`npm
+ * install --ignore-scripts`) on first boot — pnpm does not run dependency
+ * lifecycle scripts, so the package cannot rely on a postinstall.
  */
-import { existsSync, lstatSync, mkdirSync, readdirSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { copyFileSync, cpSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { execSync } from "node:child_process";
 import { join, relative, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { PI_PRESET } from "./preset/pi-preset-registration.js";
 
 const name = "dsh-pi-preset-bootstrap";
 
-/** Files never mirrored into the user-root preset. */
-const SKIP = new Set(["node_modules", "package-lock.json"]);
+/** Marker file proving the mirror directory is ours to replace wholesale. */
+const MARKER = ".dsh-pi-preset-mirror";
 
+/** Files never copied into the mirror: node_modules has its own stamp flow. */
+const SKIP = new Set(["node_modules", "package-lock.json", "pi-preset-registration.js"]);
+
+/** The package's own preset/ directory. */
+function presetDir() {
+	return fileURLToPath(new URL("./preset/", import.meta.url));
+}
+
+/** The roster's user root: `$DSH_HOME/.agent-presets`, defaulting to `~/.dsh`. */
+function userRoot() {
+	const dshHome = process.env.DSH_HOME !== undefined && process.env.DSH_HOME !== ""
+		? resolve(process.env.DSH_HOME)
+		: join(homedir(), ".dsh");
+	return join(dshHome, ".agent-presets");
+}
+
+/** Relative paths of every preset file to copy, in stable order. */
 function listFiles(dir, base = dir) {
 	const files = [];
 	for (const entry of readdirSync(dir, { withFileTypes: true })) {
@@ -49,69 +70,126 @@ function listFiles(dir, base = dir) {
 	return files;
 }
 
+/** Materialize `preset/node_modules` once; the steady-state boot only stats. */
+function ensureDependencies() {
+	const dir = presetDir();
+	const marker = join(dir, "node_modules", "@earendil-works", "pi-coding-agent");
+	if (existsSync(marker)) return;
+	console.log(`[dsh-pi-preset] materializing preset dependencies (npm install --ignore-scripts) ...`);
+	execSync("npm install --ignore-scripts --no-audit --no-fund", {
+		cwd: dir,
+		stdio: ["ignore", "ignore", "pipe"],
+	});
+	console.log(`[dsh-pi-preset] preset dependencies ready`);
+}
+
+/**
+ * Copy the preset into the user root, shared by both roster paths.
+ *
+ * Preset files are refreshed on every boot; node_modules (150M+) is copied
+ * once and stamped with the vendored lockfile's identity, so steady-state
+ * boots only rewrite the small files.
+ */
+function materializeMirror() {
+	const root = userRoot();
+	const mirror = join(root, "pi");
+	const source = presetDir();
+	mkdirSync(root, { recursive: true });
+
+	const state = (() => {
+		try {
+			const stat = lstatSync(mirror);
+			if (stat.isSymbolicLink()) return "symlink";
+			if (stat.isDirectory() && existsSync(join(mirror, MARKER))) return "mirror";
+			return "foreign";
+		} catch {}
+		return "absent";
+	})();
+	if (state === "symlink") rmSync(mirror);
+	if (state === "foreign") {
+		const backup = `${mirror}.pre-dsh-pi-preset-${Date.now()}`;
+		renameSync(mirror, backup);
+		console.log(`[dsh-pi-preset] existing preset directory moved to ${backup}`);
+	}
+	mkdirSync(mirror, { recursive: true });
+
+	// Preset files: small, so copied on every boot. Remove each target first —
+	// a leftover symlink from an older boot would make copyFileSync write
+	// THROUGH the link, leaving the mirror pointing at the package checkout
+	// whose module URLs the interception layer reroutes (see the header).
+	let copied = 0;
+	for (const file of listFiles(source)) {
+		const target = join(mirror, file);
+		mkdirSync(join(target, ".."), { recursive: true });
+		rmSync(target, { force: true });
+		copyFileSync(join(source, file), target);
+		copied += 1;
+	}
+
+	// node_modules: copied only when the vendored lockfile changes. The
+	// marker carries the stamp, so one read both proves ownership and
+	// compares versions; a missing marker (first boot) reads as no stamp.
+	const lock = join(source, "package-lock.json");
+	const stamp = `${statSync(lock).size}:${Math.floor(statSync(lock).mtimeMs)}`;
+	const stamped = existsSync(join(mirror, MARKER)) ? readFileSync(join(mirror, MARKER), "utf8") : "";
+	const vendored = join(mirror, "node_modules");
+	if (stamped !== stamp || !existsSync(vendored)) {
+		console.log(`[dsh-pi-preset] copying vendored node_modules into the mirror ...`);
+		rmSync(vendored, { recursive: true, force: true });
+		cpSync(join(source, "node_modules"), vendored, { recursive: true });
+		console.log(`[dsh-pi-preset] vendored node_modules copied`);
+	}
+	writeFileSync(join(mirror, MARKER), stamp);
+	console.log(`[dsh-pi-preset] preset materialized at ${mirror} (${copied} file(s))`);
+}
+
+/** Register the preset with the declarative registry (DSH Desktop 0.8+). */
+function registerWithRegistry(ctx) {
+	if (typeof ctx.inject !== "function") return;
+	ctx.inject(["agentPresets"], (rosterCtx) => {
+		const roster = rosterCtx.agentPresets;
+		if (typeof roster?.register !== "function") return;
+
+		// The bridge files cross as absolute file: URLs into the materialized
+		// copy (the registry mounts plugins against its own baseUrl, where
+		// this package's relative names would not resolve).
+		const mirrorUrl = new URL(`${pathToFileURL(join(userRoot(), "pi")).href}/`);
+		const definition = {
+			...PI_PRESET,
+			plugins: PI_PRESET.plugins.map((row) =>
+				typeof row.name === "string" && row.name.startsWith("./")
+					? { ...row, name: new URL(row.name, mirrorUrl).href }
+					: row,
+			),
+		};
+
+		rosterCtx.effect(() => {
+			const settled = roster
+				.register(definition)
+				.then((unregister) => {
+					console.log(`[dsh-pi-preset] Pi preset registered with the agent-preset registry`);
+					return unregister;
+				})
+				.catch((error) => {
+					console.error(`[dsh-pi-preset] registry registration failed: ${String(error?.stack ?? error)}`);
+					return undefined;
+				});
+			return () => {
+				void settled.then((unregister) => unregister?.()).catch(() => {});
+			};
+		}, "dsh-pi-preset.register()");
+	}, "dsh-pi-preset.registry()");
+}
+
 function apply(ctx) {
 	ctx.effect(() => {
-		const packageDir = fileURLToPath(new URL(".", import.meta.url));
-		const presetDir = join(packageDir, "preset");
-
-		// 1. Dependencies for the preset's tool plugins (pi-coding-agent,
-		//    dsh-tools, typebox), resolved through the mirrored node_modules.
-		const marker = join(presetDir, "node_modules", "@earendil-works", "pi-coding-agent");
-		if (!existsSync(marker)) {
-			console.log(`[dsh-pi-preset] materializing preset dependencies (npm install --ignore-scripts) ...`);
-			execSync("npm install --ignore-scripts --no-audit --no-fund", {
-				cwd: presetDir,
-				stdio: ["ignore", "ignore", "pipe"],
-			});
-			console.log(`[dsh-pi-preset] preset dependencies ready`);
+		try {
+			ensureDependencies();
+			materializeMirror();
+			registerWithRegistry(ctx);
+		} catch (error) {
+			console.error(`[dsh-pi-preset] bootstrap failed: ${String(error?.stack ?? error)}`);
 		}
-
-		// 2. Materialize the preset mirror under the roster's user root.
-		const dshHome = process.env.DSH_HOME !== undefined && process.env.DSH_HOME !== ""
-			? resolve(process.env.DSH_HOME)
-			: join(homedir(), ".dsh");
-		const userRoot = join(dshHome, ".agent-presets");
-		const mirror = join(userRoot, "pi");
-		mkdirSync(userRoot, { recursive: true });
-
-		const mirrorState = (() => {
-			try {
-				const stat = lstatSync(mirror);
-				if (stat.isSymbolicLink()) return "symlink";
-				if (stat.isDirectory()) return existsSync(join(mirror, ".dsh-pi-preset-mirror")) ? "mirror" : "foreign";
-			} catch {}
-			return "absent";
-		})();
-		if (mirrorState === "symlink") rmSync(mirror);
-		if (mirrorState === "foreign") {
-			const backup = `${mirror}.pre-dsh-pi-preset-${Date.now()}`;
-			renameSync(mirror, backup);
-			console.log(`[dsh-pi-preset] existing preset directory moved to ${backup}`);
-		}
-		mkdirSync(mirror, { recursive: true });
-
-		// 3. Link the preset files into the mirror. The mirror is fully owned
-		//    (proven by the marker check above), so its previous contents are
-		//    replaced wholesale: real copies left by an older copy-based
-		//    boot, or links to a superseded install path. The steady-state
-		//    boot therefore only recreates symlinks, and a `link:`-installed
-		//    checkout needs no further propagation step.
-		let linked = 0;
-		for (const entry of readdirSync(mirror, { withFileTypes: true })) {
-			rmSync(join(mirror, entry.name), { recursive: true, force: true });
-		}
-		for (const file of listFiles(presetDir)) {
-			const target = join(mirror, file);
-			mkdirSync(join(target, ".."), { recursive: true });
-			symlinkSync(join(presetDir, file), target);
-			linked += 1;
-		}
-
-		// 4. Point node_modules at the vendored install (a directory link, so
-		//    the pi tools resolve their relative imports through it).
-		symlinkSync(join(presetDir, "node_modules"), join(mirror, "node_modules"), "dir");
-		writeFileSync(join(mirror, ".dsh-pi-preset-mirror"), "");
-		console.log(`[dsh-pi-preset] preset mirror linked at ${mirror} (${linked} file(s))`);
 	}, "dsh-pi-preset.bootstrap()");
 }
 

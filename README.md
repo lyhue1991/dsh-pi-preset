@@ -8,9 +8,9 @@ A new agent preset named **Pi**:
 
 - **System prompt** — the output of pi's own `buildSystemPrompt` (`@earendil-works/pi-coding-agent` 0.85.1), mounted as the sole prompt section.
 - **Tools** — pi's real tool implementations (`read`/`edit`/`write`/`grep`/`find`/`ls` via pi's own factories), with pi's synchronous `bash` replaced by **pi-codex's non-blocking `bash` + `bash_io`** (spawn, poll, write stdin, Ctrl-C; long-running commands return a `session_id` instead of blocking).
-- **No Desktop PPT tools** — the Pi preset masks the host-level `dsh-ppt-composer` tools (`pptd_*` and `ppt_*`) without disabling them for other presets.
 - **Skills** — DSH's standard skill stack (the `skill` tool and catalog messages).
 - **Goals** — DSH's standard goal tools (`create_goal` / `get_goal` / `update_goal`).
+- **Host-inherited tools masked** — the Desktop PPT composer (`pptd_*` / `ppt_*`) and the bundled-environment `load_workspace_dependencies` tool are restricted for Pi only; other presets are unaffected.
 - Compaction policy from the `standard` preset.
 
 ## Install
@@ -30,18 +30,32 @@ dsh plugin --profile web add ~/Codes/dsh-pi-preset
 `dsh plugin add` with a directory records a pnpm `link:` in the profile's
 `package.json` (like `"@lyhue1991/dsh-pi-preset": "link:../../../Codes/dsh-pi-preset"`),
 so the profile runs this checkout itself rather than an npm copy. Then restart
-the profile. On first boot the bootstrap row:
+the profile. On first boot the bootstrap row materializes the vendored
+`preset/node_modules` (`npm install --ignore-scripts`), then registers the
+preset through whichever roster the host provides:
 
-1. materializes the vendored `preset/node_modules` (`npm install --ignore-scripts`),
-2. symlinks every preset file into `~/.dsh/.agent-presets/pi` (the roster's user root — the only third-party registration channel) and symlinks that mirror's `node_modules` back to the vendored install.
+1. **DSH Desktop 0.8+ (declarative registry)** — the bootstrap calls
+   `ctx.agentPresets.register()` with the composition from
+   `preset/pi-preset-registration.js`: `@deepseek-ai/*` rows resolve beside the
+   shipped presets, and this package's bridge plugins cross as absolute
+   `file:` URLs. There is no filesystem scan of `~/.dsh/.agent-presets` on
+   this line of hosts.
+2. **dsh web 0.1.x / legacy dsh-desktop (filesystem roster)** — a preset is a
+   directory under `~/.dsh/.agent-presets` (the roster's user root — the only
+   third-party registration channel), so the bootstrap materializes the same
+   copy there for the roster to scan.
 
-A pre-existing real `~/.dsh/.agent-presets/pi` that is not this mirror (a hand-installed copy) is renamed to `pi.pre-dsh-pi-preset-<timestamp>` (not deleted). The installed package is the single source of truth: every boot re-mirrors the preset files, so edit the preset in this checkout (or under the installed package's `preset/`) and restart to propagate.
+Both paths serve the preset from a MATERIALIZED COPY of `preset/` under
+`~/.dsh/.agent-presets/pi` — real files, never links back into the installed
+package. The Desktop host routes bare imports made from modules under each
+bundle's declaring directory to the host's own dependency copies, which are
+incompatible with this package's vendored set; files under the user root
+resolve their vendored dependencies natively. `node_modules` is copied once
+and stamped with the vendored lockfile's identity, so steady-state boots only
+rewrite the small preset files.
 
-Because the mirror is a symlink farm, the roster reads the checkout directly:
-composition edits (`agent.cordis.yml`, `preset.yml`) are picked up by new
-sessions without a restart (the roster re-reads a composition when its file
-stamp changes). `preset/pi-*.js` edits still need a profile restart — Node's
-ESM loader caches module URLs (see [Notes and boundaries](#notes-and-boundaries)).
+A pre-existing real `~/.dsh/.agent-presets/pi` that is not this copy (a hand-installed preset) is renamed to `pi.pre-dsh-pi-preset-<timestamp>` (not deleted). The installed package is the single source of truth: every boot re-registers and re-copies the preset files, so edit the preset in this checkout (or under the installed package's `preset/`) and restart to propagate. All edits — composition or `preset/pi-*.js` — need a host restart to reach the preset (Node's ESM loader caches module URLs; see [Notes and boundaries](#notes-and-boundaries)).
+
 
 Select **Pi** in the agent-preset picker (or set the `agent-presets.default` setting) for new sessions.
 
@@ -51,7 +65,7 @@ Select **Pi** in the agent-preset picker (or set the `agent-presets.default` set
 dsh plugin --profile web remove @lyhue1991/dsh-pi-preset
 ```
 
-and remove the symlink at `~/.dsh/.agent-presets/pi` if you no longer need the preset.
+and remove the copy at `~/.dsh/.agent-presets/pi` if you no longer need the preset.
 
 ## Permission model
 
