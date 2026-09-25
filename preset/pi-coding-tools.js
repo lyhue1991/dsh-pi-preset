@@ -6,7 +6,10 @@
  *   - pi's typebox `parameters` is converted via ./pi-typebox-bridge.js;
  *   - `execute(toolCallId, params, signal, onUpdate, ctx)` is bridged onto
  *     DSH's `execute(args, exec)`;
- *   - pi's `content` blocks are flattened to the text DSH tools return.
+ *   - pi's text blocks pass through, and pi's inline base64 image blocks
+ *     (from `read` on image files) are decoded and durably committed to the
+ *     DSH attachment store, so the result carries real image blocks instead
+ *     of a "1 image block(s) omitted" note.
  *
  * Tools resolve the calling session's workspace per call
  * (`exec.agent.session.header.cwd`, falling back to process.cwd()), matching
@@ -19,7 +22,7 @@
  * keep the same tool name.
  */
 import { defineTool } from "@deepseek-ai/dsh-tools";
-import { flattenPiContent, typeboxRootToParameters } from "./pi-typebox-bridge.js";
+import { piToolOutput, piToolValue, typeboxRootToParameters } from "./pi-typebox-bridge.js";
 import {
 	createEditToolDefinition,
 	createFindToolDefinition,
@@ -66,12 +69,7 @@ function apply(ctx) {
 				name: probe.name,
 				description: probe.description,
 				parameters: typeboxRootToParameters(probe.parameters),
-				output: {
-					schema: { type: "string" },
-					render(_args, value) {
-						return [{ type: "text", text: value }];
-					},
-				},
+				output: piToolOutput,
 				async execute(args, exec) {
 					const definition = definitions(sessionCwd(exec)).get(toolName);
 					const result = await definition.execute(
@@ -81,7 +79,7 @@ function apply(ctx) {
 						undefined,
 						undefined,
 					);
-					return flattenPiContent(result);
+					return piToolValue(result, ctx.get("attachments"));
 				},
 			}),
 		);
