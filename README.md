@@ -6,7 +6,7 @@ A DSH plugin that ships the `pi` agent preset: pi's real system prompt and pi's 
 
 A new agent preset named **Pi**:
 
-- **System prompt** — the output of pi's own `buildSystemPrompt` (`@earendil-works/pi-coding-agent` 0.85.1), mounted as the sole prompt section.
+- **System prompt** — a Pi 1.0-style structured prompt (`<tools>` / `<rules>` / `<cwd>`), adapted for DSH and mounted as the sole prompt section. It preserves pi-codex's non-blocking bash guidance rather than claiming to be Pi's unmodified `buildSystemPrompt` output.
 - **Tools** — pi's real tool implementations (`read`/`edit`/`write`/`grep`/`find`/`ls` via pi's own factories), with pi's synchronous `bash` replaced by **pi-codex's non-blocking `bash` + `bash_io`** (spawn, poll, write stdin, Ctrl-C; long-running commands return a `session_id` instead of blocking).
 - **Skills** — DSH's standard skill stack (the `skill` tool and catalog messages).
 - **Goals** — DSH's standard goal tools (`create_goal` / `get_goal` / `update_goal`).
