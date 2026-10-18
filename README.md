@@ -6,7 +6,7 @@ A DSH plugin that ships the `pi` agent preset: pi's real system prompt and pi's 
 
 A new agent preset named **Pi**:
 
-- **System prompt** — a Pi 1.0-style structured prompt (`<tools>` / `<rules>` / `<cwd>`), adapted for DSH and mounted as the sole prompt section. It preserves pi-codex's non-blocking bash guidance rather than claiming to be Pi's unmodified `buildSystemPrompt` output.
+- **System prompt** — a Pi 1.0-style structured prompt (`<tools>` / `<rules>` / `<cwd>`), adapted for DSH and mounted as the sole prompt section. It preserves pi-codex's non-blocking bash guidance rather than claiming to be Pi's unmodified `buildSystemPrompt` output. The `<cwd>` reference resolves through a preset-registered `{{cwd}}` prompt variable (`preset/pi-prompt-variable.js`) — dsh-system-prompt 0.2.x requires explicit variable registration and rejects unregistered references; older hosts resolve `{{cwd}}` implicitly and that row no-ops.
 - **Tools** — pi's real tool implementations (`read`/`edit`/`write`/`grep`/`find`/`ls` via pi's own factories), with pi's synchronous `bash` replaced by **pi-codex's non-blocking `bash` + `bash_io`** (spawn, poll, write stdin, Ctrl-C; long-running commands return a `session_id` instead of blocking).
 - **Skills** — DSH's standard skill stack (the `skill` tool and catalog messages).
 - **Goals** — DSH's standard goal tools (`create_goal` / `get_goal` / `update_goal`).

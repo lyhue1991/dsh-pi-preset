@@ -72,6 +72,10 @@ const PI_PRESET = {
 			},
 		},
 
+		// The `{{cwd}}` the persona references; explicit since dsh-system-
+		// prompt 0.2.x (older hosts resolve it implicitly and skip this row).
+		{ id: "pi-prompt-variable", name: "./pi-prompt-variable.js" },
+
 		// pi's real coding tools and pi-codex's non-blocking bash.
 		{ id: "pi-coding-tools", name: "./pi-coding-tools.js" },
 		{ id: "pi-codex-bash", name: "./pi-codex-bash.js" },
